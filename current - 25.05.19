@@ -1,324 +1,623 @@
 #include <ENGG1500Lib.h>
+
 #include <Servo.h> 
+
 #define ENA 5
+
 #define ENB 6
+
 #define IN1 8
+
 #define IN2 9
+
 #define IN3 10
+
 #define IN4 11
+
 #define ECHO 13
+
 #define TRIG 7
+
 #define LD A5
+
 #define RD 12
 
+
+
 //values for ir sensors
+
 float x1 = 22;
+
 float x2 = 10;
+
 float x3 = -10;
+
 float x4 = -24;
 
+
+
 //declaring for ir sensors
+
 float wR2;
+
 float wR1;
+
 float wL1;
+
 float wL2;
 
+
+
 //servo 
+
 Servo myservo;  // create servo object to control a servo 
+
 int rightDetect = 3000, leftDetect = 3000;
 
+
+
 void setup() {
+
   // put your setup code here, to run once:
+
   //initiate pins for motors
+
   pinMode(5, OUTPUT);       //set ENA as an output  //left speed
+
   pinMode(6, OUTPUT);       //set ENB as an output  //right speed
+
   pinMode(8, OUTPUT);       //set IN1 as an output  //left direction
+
   pinMode(9, OUTPUT);       //set IN2 as an output  //left direction
+
   pinMode(10, OUTPUT);      //set IN3 as an output  //right direction
+
   pinMode(11, OUTPUT);      //set IN4 as an output  //right direction
 
+
+
   //initiate pins for line sensors
+
   pinMode(A0,INPUT);        //R2
+
   pinMode(A1,INPUT);        //R1
+
   pinMode(A2,INPUT);        //L1
+
   pinMode(A3,INPUT);        //L2
+
   pinMode(A5, INPUT);        //DigL
+
   pinMode(12, INPUT);        //DigR
+
   
+
   //initiate pins for sonar
+
   pinMode(TRIG, OUTPUT);    //set trigger pin as an output
+
   pinMode(ECHO, INPUT);     //set read (echo) pin as an input
 
+
+
   //Servo
+
   myservo.attach(4);  // attaches the servo on pin 9 to the servo object
+
   myservo.write(70);
+
   
+
   //initiate encoders
+
   enc_init();
+
   enc_clear();
 
+
+
   leftForwards();
+
   rightForwards();
+
   
+
   //initiate serial monior
+
 //  Serial.begin(115200); //
 
+
+
   //delay before starting main code loop
+
   delay(5000);              //5 second delay
+
 }
+
+
 
 void loop() {
+
   //STATES
+
   unsigned int STOPPED = (sonar_mm() < 140);
+
   int NOWALLS = (rightDetect > 250) || (leftDetect > 250);
+
   int WALLS = (rightDetect < 250) && (leftDetect < 250);
+
   
+
   // put your main code here, to run repeatedly:
+
   
+
   //Serial.println(sonar_mm());
+
   if (STOPPED) {
+
      motorstop();
+
      servo();
+
      if (NOWALLS) {                        //no walls on side - deadend
+
         deadEnd();
+
      } else if (WALLS){                   //walls on side and front - garage
+
         for(;;) {;}                                                 //gets stuck in this loop forever
+
      }
+
    } else {
+
    lineFollow();
+
    }
 
+
+
 }
+
+
+
 
 
 //Function
 
-void findLine(void) {
-  char fl = 0;
-  if (digR() > 0) {
-    analogWrite(ENB, 0);
-    fl = 1;
-  }
-  else if (digL() > 0) {
-    analogWrite(ENA, 0);
-    fl = 2;
-  }
-  if (fl > 0) {
-    if (fl == 1) {
-      analogWrite(ENA,80);
-      analogWrite(ENB,0);
-      while ((analogRead(A1) < 60) || (analogRead(A2) < 60)) {;}
-    }
-    else if (fl == 2) {
-      analogWrite(ENA,0);
-      analogWrite(ENB,80);
-      while ((analogRead(A1) < 60) || (analogRead(A2) < 60)) {;}
-    }
-    motorstop();
-    delay(500);
-  }
 
+
+void findLine(void) {
+
+  const unsigned int wait = 500;
+  const unsigned int pwm = 80;
+  const unsigned int threshold = 50;
+
+  if (digR() > 0) {
+    
+    analogWrite(ENA,pwm);
+    analogWrite(ENB,0);
+    
+    while ( ( analogRead(L1) + analogRead(R1) ) < ( threshold * 2 ) ) {;}
+    
+    motorstop();
+    delay(wait);
+  }
+   else if (digL() > 0) {
+    
+    analogWrite(ENA, 0);
+    analogWrite(ENB,pwm);
+    
+    while ( ( analogRead(L1) + analogRead(R1) ) < ( threshold * 2 ) ) {;}
+    
+    motorstop;
+    delay(wait);
+  }
 }
+
+
+
 
 
 char digL(void) {
+
   return digitalRead(LD);
+
 }
+
 char digR(void) {
+
   return digitalRead(RD);
+
 }
+
+
 
 void followWall(unsigned int pwr) {
+
   wR2 = analogRead(A0);
+
   wR1 = analogRead(A1);
+
   wL1 = analogRead(A2);
+
   wL2 = analogRead(A3);
+
+
 
   int wallDistance = sonar_mm() - 115;
+
   int gain = 1;
+
   analogWrite(ENA, pwr + wallDistance*gain);
+
   analogWrite(ENB, pwr - wallDistance*gain);
+
   Serial.println(wallDistance);
+
 }
+
+
 
 void servo(void) {
+
   int pos = 90;    // variable to store the servo position  
 
+
+
   motorstop();
+
   delay(500);
+
     
+
   myservo.write(0);              // tell servo to go to position in variable 'pos' 
+
   rightDetect = sonar_mm();
+
   delay(1500);                       // waits 15ms for the servo to reach the position      
+
   
+
   myservo.write(180);              // tell servo to go to position in variable 'pos' 
+
   leftDetect = sonar_mm();
+
   delay(1500);                       // waits 15ms for the servo to reach the position 
 
+
+
   myservo.write(0);
+
 }
+
+
 
 /*float pwr_L(unsigned int speed){
+
   float left;
+
   return left = (speed+0.1778)/0.3331;
+
 }
+
+
 
 float pwr_R(unsigned int speed){
+
   float right;
+
   return right = (speed+3.1479)/0.3857;
+
 }*/
 
+
+
 void deadEnd(void){
+
     motorstop();
+
     delay(500);
+
     unsigned int encL = enc_getLeft() + 10;
+
     unsigned int encR = enc_getRight() + 10;
+
     unsigned int pwr = 80;
+
     
+
     motorstop();
+
     delay(500);
+
     leftForwards();
+
     rightBackwards();
+
     encL = enc_getLeft() + 10;
+
     encR = enc_getRight() + 10;
+
     while((encR > enc_getRight()) || (encL > enc_getLeft())) {      //sending backwards for 10 clicks
+
       analogWrite(ENA, pwr);
+
       analogWrite(ENB, pwr);
+
     }
+
     motorstop();
+
     delay(500);
+
     rightForwards();
+
     while ((analogRead(A1) < 100) || (analogRead(A0) < 100)) {      //finds the line and goes forward again
+
       analogWrite(ENA, pwr);
+
       analogWrite(ENB, pwr+5);
+
     }
+
     lineFollow();
+
 }
 
+
+
 void lineFollow(void){
+
   wR2 = analogRead(A0);
+
   wR1 = analogRead(A1);
+
   wL1 = analogRead(A2);
+
   wL2 = analogRead(A3);
+
   Serial.println("R1, R2, L2, L1");
+
   Serial.print(wR2);
+
   Serial.print(" - ");
+
   Serial.print(wR1);
+
   Serial.print(" - ");
+
   Serial.print(wL1);
+
   Serial.print(" - ");
+
   Serial.println(wL2);
+
   if ((wR2 > 300) && (wR1 > 300) &&(wL1 > 300) &&(wL2 > 300)) {
+
     wR2 = 1;
+
     wR1 = 1;
+
     wL1 = 1;
+
     wL2 = 1;
+
   }
+
   float leftcapped = wL1*x3+wL2*x4;
+
   if ( leftcapped < 1000*x4) {
+
     leftcapped = 1000*x4;
+
   }
+
   float rightcapped = wR2*x1+wR1*x2;
+
   if ( rightcapped > 1000*x1) {
+
     rightcapped = 1000*x1;
+
   }
+
     
+
   float numerator = rightcapped + leftcapped;
+
   float denominator = wR1+wR2+wL1+wL2;
+
+
 
   float lineDistance = numerator/denominator;
 
+
+
   unsigned int pwr = 85;
+
   char enc_clicks = 25;
+
   int gain = 2.5;
 
+
+
   if(denominator < 150) {
+
     findLine();
+
   }
+
   
 
+
+
   analogWrite(ENA, pwr + lineDistance*gain);
+
   analogWrite(ENB, pwr - lineDistance*gain);
 
+
+
   //Serial.println(denominator);
+
   //Serial.print(" - ");
+
   //Serial.println(pwr_R(enc_clicks)-lineDistance*gain);
 
+
+
   /*if (denominator < 149) && (lastMillis < millis()
+
   if(denominator < 149)  {
+
     enc_clear;
+
     while(denominator < 149) {
+
       denominator = analogRead(A0) + analogRead(A1) + analogRead(A2) + analogRead(A3);
+
       if(enc_getLeft() >= 10) {
+
         analogWrite(ENA, 0);
+
         analogWrite(ENB, 0);
+
         myservo.write(0);
+
         Serial.println(denominator);
+
         while((sonar_mm() < 250) && (denominator < 149)) {
+
           denominator = analogRead(A0) + analogRead(A1) + analogRead(A2) + analogRead(A3);
+
           followWall(pwr);
+
           Serial.println(denominator);
+
         }
+
       }
+
     }
+
   }*/
+
 }
+
+
+
 
 
         //SONAR READING
+
         
+
 unsigned int sonar_mm(void){
+
   long duration = 0;
+
   const float speed_sound = 340.29;     // m/s, "const" makes the compiler able to optimise
+
             //... the program where this variable is used, cool!
+
             // Read in a distance from the ultrasonic distance sensor:
+
             // The ultrasonic burst is triggered by a HIGH pulse of 10 microseconds.
+
   digitalWrite(TRIG, HIGH);
+
   delayMicroseconds(10);
+
   digitalWrite(TRIG, LOW);
+
             //read length of time pulse
+
   duration = pulseIn(ECHO, HIGH); //This function measures a pulsewidth and returns
+
             //...the width in microseconds
+
             // convert the time into a distance
+
             // the code "(unsigned int)" turns the result of the distance calculation
+
             // into an integer instead of a floating point (decimal or fractional) number.
+
   unsigned int rtn = 0;
+
   if ((unsigned int)(0.5 * duration * 1e-6 * speed_sound * 1e3) > 3000) {
+
     rtn = 3000;
+
   }else {
+
     rtn = (unsigned int)(0.5 * duration * 1e-6 * speed_sound * 1e3);
+
   }
+
   return rtn;
+
             //"unsigned" ensures we are returning an unsigned number, remember that there is no
+
             //...such thing as negative distance.
+
 }
+
+
 
 // MOTORS //
+
 void motorstop(void) {              //right motor hard stop
+
   analogWrite(ENA,0);
+
   analogWrite(ENB,0);
+
 }
+
 //This function sets IN3 = LOW and IN4 = HIGH to set the left motor to forwards
+
 void leftForwards(void) {
+
   digitalWrite(8, LOW);                       //IN1
+
   digitalWrite(9, HIGH);                      //IN2
+
 }
+
+
 
 //This function sets IN3 = LOW and IN4 = HIGH to set the left motor to backwards
+
 void leftBackwards(void) {
+
   digitalWrite(8, HIGH);                      //IN1
+
   digitalWrite(9, LOW);                       //IN2
+
 }
+
+
 
 //RIGHT MOTOR//
+
 //This function sets IN3 = LOW and IN4 = HIGH to set the right moto to forwards
+
 void rightForwards(void) {
+
   digitalWrite(10, LOW);                      //IN3
+
   digitalWrite(11, HIGH);                     //IN4
+
 }
 
+
+
 //This function sets IN3 = HIGH and IN4 = LOW to set the right moto to backwards
+
 void rightBackwards(void) {
+
   digitalWrite(10, HIGH);                     //IN3
+
   digitalWrite(11, LOW);                      //IN4
+
 }
