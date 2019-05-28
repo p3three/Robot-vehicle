@@ -23,9 +23,23 @@ float wR1;
 float wL1;
 float wL2;
 
+// wait without delay
+ unsigned int currentMillis = millis();
+
 //servo 
-Servo myservo;  // create servo object to control a servo 
-int rightDetect = 3000, leftDetect = 3000;
+Servo myservo;  // create servo object to control a servo
+// int rightDetect = 3000, leftDetect = 3000;
+
+ unsigned int servo_move_delay = 100;
+ bool HALL = 0;
+ 
+ unsigned int ping0;      // right - hallway, dead end
+// unsigned int ping45;
+ unsigned int ping70;     // forwards right - move forwards
+ unsigned int ping90;     // forwards - dead end
+ unsigned int ping110;    // forwards left - move forwards
+// unsigned int ping135;
+ unsigned int ping180;    // left - hallway, dead end
 
 void setup() {
   // put your setup code here, to run once:
@@ -51,7 +65,8 @@ void setup() {
 
   //Servo
   myservo.attach(4);  // attaches the servo on pin 9 to the servo object
-  myservo.write(70);
+  // myservo.write(70);
+  servo_start();
   
   //initiate encoders
   enc_init();
@@ -64,60 +79,146 @@ void setup() {
 //  Serial.begin(115200); //
 
   //delay before starting main code loop
-  delay(5000);              //5 second delay
+  delay(2000);              // 2 second delay
 }
 
 void loop() {
-  //STATES
-  unsigned int STOPPED = (sonar_mm() < 140);
-  int NOWALLS = (rightDetect > 250) || (leftDetect > 250);
-  int WALLS = (rightDetect < 250) && (leftDetect < 250);
   
-  // put your main code here, to run repeatedly:
+  if ( HALL ) { servo_hall() ;}
+  else { servo_moving() ;}
   
-  //Serial.println(sonar_mm());
-  if (STOPPED) {
-     motorstop();
-     servo();
-     if (NOWALLS) {                        //no walls on side - deadend
-        deadEnd();
-     } else if (WALLS){                   //walls on side and front - garage
-        for(;;) {;}                                                 //gets stuck in this loop forever
-     }
-   } else {
-   lineFollow();
-   }
+  lineFollow();
+  
+  // //STATES
+  // unsigned int STOPPED = (sonar_mm() < 140);
+  // int NOWALLS = (rightDetect > 250) || (leftDetect > 250);
+  // int WALLS = (rightDetect < 250) && (leftDetect < 250);
 
+  // // put your main code here, to run repeatedly:
+
+  // //Serial.println(sonar_mm());
+
+  // if (STOPPED) {
+  //   motorstop();
+  //   servo();
+  //   if (NOWALLS) {                        //no walls on side - deadend
+  //       deadEnd();
+  //   } else if (WALLS){                   //walls on side and front - garage
+  //       for(;;) {;}                                                 //gets stuck in this loop forever
+  //   }
+  // } else {
+  // lineFollow();
+  // }
+  
+  
 }
 
 
 //Function
 
-void findLine(void) {
-  char fl = 0;
-  if (digR() > 0) {
-    analogWrite(ENB, 0);
-    fl = 1;
-  }
-  else if (digL() > 0) {
-    analogWrite(ENA, 0);
-    fl = 2;
-  }
-  if (fl > 0) {
-    if (fl == 1) {
-      analogWrite(ENA,80);
-      analogWrite(ENB,0);
-      while ((analogRead(A1) < 60) || (analogRead(A2) < 60)) {;}
+void servo_moving(void) {
+  static char n = 0;
+  static unsigned int lastMillis = currentMillis;
+  const unsigned int delay = 100;
+  if ( lastMillis < currentMillis + delay ) {
+    switch ( n ) {
+      case 1 :
+      servo_ping70();
+      break;
+      case 2 :
+      servo_ping110();
+      break;
     }
-    else if (fl == 2) {
-      analogWrite(ENA,0);
-      analogWrite(ENB,80);
-      while ((analogRead(A1) < 60) || (analogRead(A2) < 60)) {;}
-    }
-    motorstop();
-    delay(500);
+    lastMillis = currentMillis;
+    n++;
+    if ( n > 2 ) { n = 1; }
   }
+}
+void servo_hall(void) {
+  static char n = 0;
+  static bool rl = 0;
+  static unsigned int lastMillis = currentMillis;
+  const unsigned int delay = 100;
+  if ( lastMillis < currentMillis + delay ) {
+    switch ( n ) {
+      case 1 :
+      servo_ping0();
+      break;
+      case 2 :
+      servo_ping90();
+      break;
+      case 3 :
+      servo_ping180();
+      break;
+    }
+    lastMillis = currentMillis;
+    if ( n >= 3 ) { rl = 1; }
+    else if ( n <= 1) { rl = 0; }
+    
+    if ( rl = 0 ) { n += 1 ;}
+    else { n -= 1 ;}
+  }
+}
+void servo_start(void) {
+  const unsigned int wait = 50;
+  servo_ping0();  delay(wait);
+  servo_ping70();  delay(wait);
+  servo_ping90();  delay(wait);
+  servo_ping110();  delay(wait);
+  servo_ping180();  delay(wait);
+}
 
+void servo_ping0(void) {
+  myservo.write(0);  delay(servo_move_delay);
+  ping0   = sonar_mm();  
+}
+void servo_ping70(void) {
+  myservo.write(70);  delay(servo_move_delay);
+  ping70  = sonar_mm();
+}
+void servo_ping90(void) {
+  myservo.write(90);  delay(servo_move_delay);
+  ping90  = sonar_mm();
+}
+void servo_ping110(void) {
+  myservo.write(110);  delay(servo_move_delay);
+  ping110 = sonar_mm();
+}
+void servo_ping180(void) {
+  myservo.write(180);  delay(servo_move_delay);
+  ping180 = sonar_mm();
+}
+
+
+void findLine(unsigned int pwr) {
+
+  const unsigned int wait = 500;
+  const unsigned int threshold = 60;
+  unsigned int pwm = pwr;
+
+  if (digR() > 0) {
+    
+    analogWrite(ENA,pwm);
+    analogWrite(ENB,0);
+    
+    while ( ( analogRead(A1) + analogRead(A2) ) < ( threshold * 2 ) ) {;}
+    
+    motorstop;
+    delay(wait);
+  }
+   else if (digL() > 0) {
+    
+    analogWrite(ENA, 0);
+    analogWrite(ENB,pwm);
+    
+    while ( ( analogRead(A1) + analogRead(A2) ) < ( threshold * 2 ) ) {;}
+    
+    motorstop;
+    delay(wait);
+  }
+  else {
+    followWall(pwr);
+  }
 }
 
 
@@ -129,34 +230,49 @@ char digR(void) {
 }
 
 void followWall(unsigned int pwr) {
+  HALL = 1;
+  servo_start();
+  if ( ping90 < 180 ) { for(;;){;} }  // FINISH //
+  
   wR2 = analogRead(A0);
   wR1 = analogRead(A1);
   wL1 = analogRead(A2);
   wL2 = analogRead(A3);
-
-  int wallDistance = sonar_mm() - 115;
+  
+  // int wallDistance = sonar_mm() - 115;
+  int wallDistance = ping0 - ping180;
+  
   int gain = 1;
-  analogWrite(ENA, pwr + wallDistance*gain);
-  analogWrite(ENB, pwr - wallDistance*gain);
+  unsigned int pwrA = pwr + wallDistance*gain;
+  unsigned int pwrB = pwr - wallDistance*gain;
+  
+  if ( pwrA > 255 ) { pwrA = 255 ;}
+  else if ( pwrA < 0 ) { pwrA = 0 ;}
+  if ( pwrB > 255 ) { pwrB = 255 ;}
+  else if ( pwrB < 0 ) { pwrB = 0 ;}
+  
+  analogWrite(ENA, pwrA);
+  analogWrite(ENB, pwrB);
+  
   Serial.println(wallDistance);
 }
 
-void servo(void) {
-  int pos = 90;    // variable to store the servo position  
-
-  motorstop();
-  delay(500);
-    
-  myservo.write(0);              // tell servo to go to position in variable 'pos' 
-  rightDetect = sonar_mm();
-  delay(1500);                       // waits 15ms for the servo to reach the position      
-  
-  myservo.write(180);              // tell servo to go to position in variable 'pos' 
-  leftDetect = sonar_mm();
-  delay(1500);                       // waits 15ms for the servo to reach the position 
-
-  myservo.write(0);
-}
+// void servo(void) {
+//   int pos = 90;    // variable to store the servo position  
+//   
+//   motorstop();
+//   delay(500);
+//     
+//   myservo.write(0);              // tell servo to go to position in variable 'pos' 
+//   rightDetect = sonar_mm();
+//   delay(1500);                       // waits 15ms for the servo to reach the position      
+//   
+//   myservo.write(180);              // tell servo to go to position in variable 'pos' 
+//   leftDetect = sonar_mm();
+//   delay(1500);                       // waits 15ms for the servo to reach the position 
+// 
+//   myservo.write(0);
+// }
 
 /*float pwr_L(unsigned int speed){
   float left;
@@ -181,14 +297,14 @@ void deadEnd(void){
     rightBackwards();
     encL = enc_getLeft() + 10;
     encR = enc_getRight() + 10;
-    while((encR > enc_getRight()) || (encL > enc_getLeft())) {      //sending backwards for 10 clicks
+    while((encR > enc_getRight()) && (encL > enc_getLeft())) {      //sending backwards for 10 clicks
       analogWrite(ENA, pwr);
       analogWrite(ENB, pwr);
     }
     motorstop();
     delay(500);
     rightForwards();
-    while ((analogRead(A1) < 100) || (analogRead(A0) < 100)) {      //finds the line and goes forward again
+    while ((analogRead(A1) < 100) && (analogRead(A0) < 100)) {      //finds the line and goes forward again
       analogWrite(ENA, pwr);
       analogWrite(ENB, pwr+5);
     }
@@ -233,12 +349,22 @@ void lineFollow(void){
   int gain = 2.5;
 
   if(denominator < 150) {
-    findLine();
-  }
+    findLine(pwr);
+  } else { HALL = 0 ;}
   
-
-  analogWrite(ENA, pwr + lineDistance*gain);
-  analogWrite(ENB, pwr - lineDistance*gain);
+  unsigned int pwrA = pwr + lineDistance*gain;
+  unsigned int pwrB = pwr - lineDistance*gain;
+  
+  if ( pwrA > 255 ) { pwrA = 255 ;}
+  else if ( pwrA < 0 ) { pwrA = 0 ;}
+  if ( pwrB > 255 ) { pwrB = 255 ;}
+  else if ( pwrB < 0 ) { pwrB = 0 ;}
+  
+  analogWrite(ENA, pwrA);
+  analogWrite(ENB, pwrB);
+  
+//   analogWrite(ENA, pwr + lineDistance*gain);
+//   analogWrite(ENB, pwr - lineDistance*gain);
 
   //Serial.println(denominator);
   //Serial.print(" - ");
